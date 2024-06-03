@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <RootNamespace>Permissions.Infrastructure.Elastic</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />
+      <PackageReference Include="NEST" Version="7.17.5" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\Permissions.Domain\Permissions.Domain.csproj" />
+    </ItemGroup>
+
+</Project>

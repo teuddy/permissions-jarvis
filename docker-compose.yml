@@ -1,0 +1,113 @@
+version: '3.9'
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/azure-sql-edge
+    container_name: sqlserver
+    restart: always
+    environment:
+      ACCEPT_EULA: Y
+      SA_PASSWORD: Password123
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver:/var/opt/mssql
+    networks:
+      - permissions_network
+
+  zookeeper:
+    image: wurstmeister/zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    networks:
+      - permissions_network
+
+  kafka-queue:
+    image: wurstmeister/kafka:latest
+    depends_on: [zookeeper]
+    container_name: permisssions-kafka
+    environment:
+      - KAFKA_BROKER_ID=1
+      - KAFKA_LISTENERS=LISTENER_DOCKER_INTERNAL://kafka-queue:29092,LISTENER_DOCKER_EXTERNAL://:9092
+      - KAFKA_ADVERTISED_LISTENERS=LISTENER_DOCKER_INTERNAL://kafka-queue:29092,LISTENER_DOCKER_EXTERNAL://127.0.0.1:9092
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=LISTENER_DOCKER_INTERNAL:PLAINTEXT,LISTENER_DOCKER_EXTERNAL:PLAINTEXT
+      - KAFKA_INTER_BROKER_LISTENER_NAME=LISTENER_DOCKER_EXTERNAL
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+      - KAFKA_CREATE_TOPICS=permission-sync-topic:1:1
+    ports:
+      - 9092:9092
+    networks:
+      - permissions_network
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.10.3
+    container_name: elasticsearch
+    environment:
+      - node.name=elasticsearch
+      - discovery.type=single-node
+      - cluster.name=docker-cluster
+      - bootstrap.memory_lock=true
+      - xpack.security.enabled=false
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - 9200:9200
+    networks:
+      - permissions_network
+  
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.10.3
+    container_name: kibana
+    depends_on: [elasticsearch]
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_URL=http://localhost:9200
+    ports:
+      - 5601:5601
+    networks:
+      - permissions_network
+
+  permissions-api:
+    image: permissions-api
+    container_name: permissions-api
+    build:
+      context: ./api/
+      dockerfile: ../.docker/api.dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5080
+      - ConnectionStrings__SqlServer=Data Source=sqlserver,1433;User ID=sa;Password=Password123;Initial Catalog=PermissionsChallenge;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=True;Connection Timeout=30;;Persist Security Info=False;
+      - Kafka__Brokers=kafka-queue:29092
+      - Kafka__Topic=permission-sync-topic
+      - Elasticsearch__Url=http://elasticsearch:9200
+      - Elasticsearch__Index=permissions
+    depends_on: [sqlserver, kafka-queue, elasticsearch]
+    ports:
+      - 5080:5080
+    networks:
+      - permissions_network
+
+  permissions-app:
+    image: permissions-app
+    container_name: permissions-app
+    build:
+      context: ./app/
+      dockerfile: ../.docker/app.dockerfile
+    environment:
+      - VITE_API_URL=http://permissions-api:5080
+    ports:
+      - 3000:3000
+    networks:
+      - permissions_network
+
+volumes:
+  sqlserver:
+    driver: local
+
+networks:
+  permissions_network:
+    driver: bridge
